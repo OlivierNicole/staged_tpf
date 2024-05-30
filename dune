@@ -1,0 +1,4 @@
+(library
+ (name staged_tpf)
+ (libraries tpf)
+ (preprocess (pps ppx_stage.ppx)))
