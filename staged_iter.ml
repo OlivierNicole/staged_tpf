@@ -1,7 +1,7 @@
 (* Not staged version, for exercise *)
 
 open Tpf
-module G = Tpf.Generic (struct type 'a q = 'a -> unit end)
+module G = Both_phases.G
 
 type iter_p = G.p
 
@@ -30,29 +30,40 @@ open Ppx_stage
 
 module Staged = struct
   module V : sig
-    type (+_, _, +_) spine =
-    | K : 'a code -> ('a, 'r, 'q) spine
-    | A : ('a -> 'b, 'r, 'q) spine * 'a code * ('a, 'q) app
-          -> ('b, 'r, 'q) spine
-    | R : ('r -> 'b, 'r, 'q) spine * 'r code -> ('b, 'r, 'q) spine
+    type (+_, _, +_, +_) stat_spine =
+    | K : 'a code -> ('a, 'r, 'statq, 'dynq) stat_spine
+    | A : ('a -> 'b, 'r, 'statq, 'dynq) spine * 'a code * ('a, 'statq) app
+          -> ('b, 'r, 'statq, 'dynq) stat_spine
+    (* Let's try without recursive types first *)
+    (*| R : ('r -> 'b, 'r, 'q) spine * 'r code -> ('b, 'r, 'q) spine*)
 
-    type ('a, +'q) t = 'a code -> ('a, 'a, 'q) spine
+    and (+'a, 'r, +'statq, +'dynq) spine =
+      { stat : ('a, 'r, 'statq, 'dynq) stat_spine option;
+        dyn : ('a, 'r, 'dynq) V.spine code }
 
-    val spine : ('a, 'q) t -> 'a code -> ('a, 'a, 'q) spine
+    type ('a, +'statq, +'dynq) t = 'a code -> ('a, 'a, 'statq, 'dynq) spine
+
+    val spine : ('a, 'statq, 'dynq) t -> 'a code -> ('a, 'a, 'statq, 'dynq) spine
   end = struct
-    type (+_, _, +_) spine =
-    | K : 'a code -> ('a, 'r, 'q) spine
-    | A : ('a -> 'b, 'r, 'q) spine * 'a code * ('a, 'q) app
-          -> ('b, 'r, 'q) spine
-    | R : ('r -> 'b, 'r, 'q) spine * 'r code -> ('b, 'r, 'q) spine
+    type (+_, _, +_, +_) stat_spine =
+    | K : 'a code -> ('a, 'r, 'statq, 'dynq) stat_spine
+    | A : ('a -> 'b, 'r, 'statq, 'dynq) spine * 'a code * ('a, 'statq) app
+          -> ('b, 'r, 'statq, 'dynq) stat_spine
+    (* Let's try without recursive types first *)
+    (*| R : ('r -> 'b, 'r, 'q) spine * 'r code -> ('b, 'r, 'q) spine*)
 
-    type ('a, +'q) t = 'a code -> ('a, 'a, 'q) spine
+    and (+'a, 'r, +'statq, +'dynq) spine =
+      { stat : ('a, 'r, 'statq, 'dynq) stat_spine option;
+        dyn : ('a, 'r, 'dynq) V.spine code }
+
+    type ('a, +'statq, +'dynq) t = 'a code -> ('a, 'a, 'statq, 'dynq) spine
 
     let spine view = view
   end
 
   type ('a, 'x) data1 =
-    { view : 'q. ('a, 'q, ('x, 'q) V.t) app1;
+    (* Only ['dynq] here I think??? *)
+    { view : 'statq 'dynq. ('a, 'dynq, ('x, 'statq, 'dynq) V.t) app1;
     }
 end
 
@@ -62,37 +73,56 @@ module G_staged = Tpf.Generic (struct
   type 'a q = 'a code -> unit code
 end)
 
+module%code Dyn = struct [@code]
+  module G = Both_phases.G
+  let rec iter_dyn_spine : 'a. ('a, 'r, G.p) Tpf.V.spine -> unit =
+    function
+    | Tpf.V.K _ -> ()
+    | Tpf.V.A (s, v, f) -> iter_dyn_spine s; G.(!:) f v
+    | Tpf.V.R _ -> failwith "unsupported"
+end
+
 let rec staged_g_iter_aux
-  : ('a, G_staged.p) V.t -> 'a code -> unit code =
+  : ('a, G_staged.p, G.p) V.t -> 'a code -> unit code =
   fun view v_code ->
-    let rec go : 'a. ('a, _, _) V.spine -> unit code =
+    let rec go : 'a. ('a, _, G_staged.p, G.p) V.spine -> unit code =
       fun spine ->
         match spine with
-        | V.K _ -> [%code () ]
-        | V.A (s, a_code, f_a) ->
+        | V.{ stat = Some (V.K _); dyn = _ } -> [%code () ]
+        | { stat = Some (V.A (s, a_code, f_a)); dyn = _ } ->
             [%code
               [%e go s ];
               [%e G_staged.(!:) f_a a_code ]
             ]
+        | { stat = None; dyn = spine_code } ->
+            [%code Dyn.iter_dyn_spine [%e spine_code] ]
+        (*
         | V.R (s, a_code) ->
             [%code
               [%e go s ];
               [%e staged_g_iter_aux view a_code ]
             ]
+        *)
     in
-    go ((V.spine view : 'a code -> ('a, _, _) V.spine) v_code)
+    go ((V.spine view : 'a code -> ('a, _, _, _) V.spine) v_code)
 
-let staged_g_iter : ('a, G_staged.p) V.t -> ('a -> unit) code =
+let staged_g_iter : ('a, G_staged.p, G.p) V.t -> ('a -> unit) code =
   fun view ->
     [%code (fun v -> [%e staged_g_iter_aux view [%code v] ]) ]
 
-let staged_list_view : ('a, 'a list) Staged.data1 =
-  { view =
-    (fun (type q) (f_a : ('a, q) app) ->
-      let v : ('a list, q) V.t =
-         fun a_code ->
-           assert false
-      in
-      v
-    );
-  }
+let staged_option_view : ('a, 'a option) Staged.data1 =
+  let rec view_aux
+    : 'statq 'dynq. ('a, 'dynq) app -> 'a option code -> ('a, 'a, 'statq, 'dynq) V.spine =
+    fun f_a ->
+      fun option_code ->
+        V.{ stat = None;
+            dyn =
+              [%code
+                match [%e option_code ] with
+                | None -> Tpf.V.K None
+                | Some a ->
+                    Tpf.V.A (K Option.some, a, f_a)
+              ]
+          }
+  in
+  assert false
