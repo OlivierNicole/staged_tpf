@@ -4,9 +4,9 @@ This aims to offer the same functionality as ppx_deriving, but based on
 type-safe metaprogramming, in order to make new derivers infinitely easier to
 write and trivial to maintain.
 
-It is an adatpation of [tpf](https://github.com/pqwy/tpf/blob/master/tpf.opam),
+It is an adaptation of [tpf](https://github.com/pqwy/tpf/blob/master/tpf.opam),
 combined with the metaprogramming PPX
-([ppx_stage](https://github.com/stedolan/ppx_stage) so that generic functions
+[ppx_stage](https://github.com/stedolan/ppx_stage) so that generic functions
 have no interpretative overhead.
 
 It is nowhere close to usable for now as it is very much WIP and the
