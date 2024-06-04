@@ -32,7 +32,7 @@ module Staged = struct
     | K : 'a code -> ('a, 'r, 'q) stat_spine
     | A : ('a -> 'b, 'r, 'q) spine * 'a code * ('a, 'q) app code
           -> ('b, 'r, 'q) stat_spine
-    (* | R : ('r -> 'b, 'r, 'q) spine * 'r code -> ('b, 'r, 'q) stat_spine *)
+    | R : ('r -> 'b, 'r, 'q) spine * 'r code -> ('b, 'r, 'q) stat_spine
     | ComputeResult : ('r, 'q) app code -> ('a, 'r, 'q) stat_spine
 
     and (+'a, 'r, 'q) spine =
@@ -49,8 +49,8 @@ module Staged = struct
   type ('a, 'x) data1 =
     { explore : 'q.
            ('a, 'q) app code
-        -> (('a option, 'q) V.t -> ('a option, 'q) app code)
-        -> ('a option, 'q) app code
+        -> (('x, 'q) V.t -> ('x, 'q) app code)
+        -> ('x, 'q) app code
     }
 end
 
@@ -69,41 +69,57 @@ module%code Dyn = struct [@code]
     | Tpf.V.R _ -> failwith "unsupported"
 end
 
-let (* rec *) staged_g_iter_aux
-  : type statq dynq a.
+let rec contains_static_recursion
+  : 'a. ('a, 'r, 'q) V.spine -> bool =
+  let open V in
+  function
+  | { stat = Some (K _); dyn = _ } -> false
+  | { stat = Some (A (s, _, _)); dyn = _ } -> contains_static_recursion s
+  | { stat = Some (R _); dyn = _ } -> true
+  | { stat = Some (ComputeResult _); dyn = _ }
+  | { stat = None; dyn = _ } -> false
+
+let staged_g_iter_aux
+  : type a.
        (a, Iterate_proxy.p) V.t
     -> a code
     -> unit code =
   fun view a_code ->
-    let rec go : type b. (b, _, Iterate_proxy.p) V.spine -> unit code =
-      fun spine ->
+    let rec go : type b. (a -> unit) code -> (b, _, Iterate_proxy.p) V.spine -> unit code =
+      fun fix spine ->
         match spine with
         | V.{ stat = Some (V.K _); dyn = _ } -> [%code () ]
         | { stat = Some (V.A (s, a_code, f_a)); dyn = _ } ->
             [%code
-              [%e go s ];
+              [%e go fix s ];
               Dyn.Iterate_proxy.(!:) [%e f_a ] [%e a_code ]
             ]
-        (*
-        | { stat = Some (R (s, a_code)); dyn = _ } ->
+        | { stat = Some (R (s, sub_instance)); dyn = _ } ->
             [%code
-              [%e go s ];
-              [%e staged_g_iter_aux view a_code ]
+              [%e go fix s ];
+              [%e fix ] [%e sub_instance ]
             ]
-        *)
         | { stat = Some (ComputeResult code); dyn = _ } ->
             [%code Dyn.Iterate_proxy.(!:) [%e code ] [%e a_code ] ]
         | { stat = None; dyn = spine_code } ->
             [%code Dyn.iter_dyn_spine [%e spine_code ] ]
     in
-    go (view a_code)
+    let spine = view a_code in
+    if contains_static_recursion spine then
+      [%code
+        let rec fix x =
+          [%e go [%code fix ] spine ]
+        in
+        fix [%e a_code ]
+      ]
+    else
+      go [%code fun _ -> () ] spine
 
 let staged_g_iter
   : ('a, Iterate_proxy.p) V.t -> ('a, Iterate_proxy.p) app code =
   fun view ->
-    [%code Dyn.Iterate_proxy.(!) (fun v -> [%e staged_g_iter_aux view [%code v] ]) ]
+    [%code Dyn.Iterate_proxy.(!) (fun v -> [%e staged_g_iter_aux view [%code v ] ]) ]
 
-(*
 let list_data1 : ('a, 'a list) Staged.data1 =
   let explore
     : type q.
@@ -126,30 +142,33 @@ let list_data1 : ('a, 'a list) Staged.data1 =
                 ]
             | x :: xs ->
                 [%e
-                  let remaining_spine =
-                    V.{ stat = Some (K [%code List.cons ]);
-                        dyn = [%code Tpf.V.K List.cons ]
+                  let rem =
+                    V.{ stat = Some (V.K [%code List.cons ]);
+                        dyn = [%code Tpf.V.K List.cons ];
                       }
                   in
                   view_consumer
                     (fun _ ->
-                      V.{ stat = Some (R (remaining_spine, [%code xs ]));
-                          dyn = [%code
-                            Tpf.V.R ([%e remaining_spine.dyn ], xs) ]
-                        }
-                    )
+                      V.{ stat =
+                            Some (
+                              V.R (
+                                V.{ stat = Some (A (rem, [%code x ], f_a));
+                                    dyn = [%code Tpf.V.A ([%e rem.dyn ], x, [%e f_a ]) ] }
+                              , xs));
+                          dyn = [%code Tpf.V.R (A (K List.cons, x, [%e f_a ]), xs) ]
+                        })
                 ]
             ]);
           dyn =
             [%code
               match [%e a_code ] with
               | [] -> Tpf.V.K []
-              | x :: xs -> Tpf.V.R (K x, xs)
+              | x :: xs ->
+                  Tpf.V.R (A (K List.cons, x, [%e f_a ]), xs)
             ]
         })
   in
   { explore }
-*)
 
 let staged_option_data1 : ('a, 'a option) Staged.data1 =
   let explore
@@ -231,7 +250,23 @@ let iter_option : ('a -> unit) -> 'a option -> unit =
   f
   opt
 
+let iter_list_aux : 'a. ('a -> unit) code -> ('a list, Iterate_proxy.p) app code =
+  fun f ->
+    list_data1.explore
+      [%code Dyn.Iterate_proxy.(!) [%e f ] ]
+      staged_g_iter
+
+let iter_list : ('a -> unit) -> 'a list -> unit =
+  fun f l ->
+    Ppx_stage.run
+      [%code
+        fun f l -> Dyn.Iterate_proxy.(!:) [%e iter_list_aux [%code f ] ] l
+      ]
+      f
+      l
+
 let show () =
   Ppx_stage.print
     Format.std_formatter
-    (iter_option_code_aux [%code fun v -> Format.printf "%d\n" v])
+    (iter_list_aux [%code fun v -> Format.printf "%d\n" v])
+    (* (iter_option_code_aux [%code Format.printf "%d\n" ]) *)
