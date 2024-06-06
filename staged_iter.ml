@@ -28,29 +28,30 @@ open Ppx_stage
 
 module Staged = struct
   module V = struct
-    type (+_, _, _) stat_spine =
-    | K : 'a code -> ('a, 'r, 'q) stat_spine
-    | A : ('a -> 'b, 'r, 'q) spine * 'a code * ('a, 'q) app code
-          -> ('b, 'r, 'q) stat_spine
-    | R : ('r -> 'b, 'r, 'q) spine * 'r code -> ('b, 'r, 'q) stat_spine
-    | DynSum : ('r code -> ('r, 'q) app code -> ('r, 'q) app code) -> ('a, 'r, 'q) stat_spine
+    type (+_, _, _) spine =
+    | K : 'a code -> ('a, 'r, 'q) spine
+    | A : ('a -> 'b, 'r, 'q) spine * 'a code * ('a, 'q) app code -> ('b, 'r, 'q) spine
+    | R : ('r -> 'b, 'r, 'q) spine * 'r code -> ('b, 'r, 'q) spine
+    (*| DynSum : ('r code -> ('r, 'q) app code -> ('r, 'q) app code) -> ('a, 'r, 'q) spine*)
 
-    and (+'a, 'r, 'q) spine =
-      { stat : ('a, 'r, 'q) stat_spine option;
-        dyn : ('a, 'r, 'q) V.spine code }
+    type ('a, 'q, 'x) t =
+         'a code
+      -> ((*('a, 'q) app code option (* Fixpoint query *)*)
+             ('a, 'a, 'q) spine
+          -> 'x code)
+      -> 'x code
 
-    type ('a, 'q) t = 'a code -> ('a, 'a, 'q) spine
-
+    (*
     let spine : ('a, 'q) t -> 'a code -> ('a, 'a, 'q) spine =
       fun view -> view
       [@@warning "-unused-value-declaration"]
+    *)
   end
 
   type ('a, 'x) data1 =
-    { explore : 'q.
+    { explore : 'q 'y.
            ('a, 'q) app code
-        -> (('x, 'q) V.t -> ('x, 'q) app code option -> ('x, 'q) app code)
-        -> ('x, 'q) app code
+        -> ('x, 'q, 'y) V.t
     }
 end
 
@@ -62,31 +63,25 @@ end)
 
 module%code Dyn = struct [@code]
   module Iterate_proxy = Both_phases.G
-
-  let rec iter_dyn_spine : 'a. ('a, 'r, Iterate_proxy.p) Tpf.V.spine -> unit =
-    function
-    | Tpf.V.K _ -> ()
-    | Tpf.V.A (s, v, f) -> iter_dyn_spine s; Iterate_proxy.(!:) f v
-    | Tpf.V.R _ -> failwith "unsupported"
 end
 
 let staged_g_iter_aux
-  : type a.
-       (a, Iterate_proxy.p) V.t
-    -> (a, Iterate_proxy.p) app code option (* Fixpoint function *)
+  : type a y.
+       (*(a, Iterate_proxy.p) app code option (* Fixpoint function *)*)
+       (a, Iterate_proxy.p, unit) V.t
     -> a code
     -> unit code =
-  fun view fix a_code ->
+  fun view a_code ->
     let rec go : type b. (a -> unit) code option -> (b, _, Iterate_proxy.p) V.spine -> unit code =
       fun fix spine ->
         match spine with
-        | V.{ stat = Some (V.K _); dyn = _ } -> [%code () ]
-        | { stat = Some (V.A (s, a_code, f_a)); dyn = _ } ->
+        | V.K _ -> [%code () ]
+        | V.A (s, a_code, f_a) ->
             [%code
               [%e go fix s ];
               Dyn.Iterate_proxy.(!:) [%e f_a ] [%e a_code ]
             ]
-        | { stat = Some (R (s, sub_instance)); dyn = _ } ->
+        | R (s, sub_instance) ->
             [%code
               [%e go fix s ];
               [%e
@@ -95,7 +90,8 @@ let staged_g_iter_aux
                 | None -> failwith "no fixpoint function when I needed it..."
               ] [%e sub_instance ]
             ]
-        | { stat = Some (DynSum sum_iter); dyn = _ } ->
+        (*
+        | DynSum sum_iter ->
             [%code
               let rec fix x =
                 Dyn.Iterate_proxy.(!:)
@@ -104,80 +100,56 @@ let staged_g_iter_aux
               in
               fix [%e a_code ]
             ]
-        | { stat = None; dyn = spine_code } ->
-            [%code Dyn.iter_dyn_spine [%e spine_code ] ]
+        *)
     in
-    let spine = view a_code in
-    go
-      (Option.map (fun f -> [%code fun x -> Dyn.Iterate_proxy.(!:) [%e f ] x ]) fix)
-      spine
+    [%code
+      let rec fix x =
+        [%e
+          view
+            [%code x ]
+            (fun spine ->
+              go (Some [%code fix ]) spine)
+        ]
+      in
+      fix [%e a_code ]
+    ]
 
 let staged_g_iter
   : type a.
-        (a, Iterate_proxy.p) V.t
-     -> (a, Iterate_proxy.p) app code option (* Fixpoint function *)
+        (a, Iterate_proxy.p, unit) V.t
+     (*-> (a, Iterate_proxy.p) app code option (* Fixpoint function *)*)
      -> (a, Iterate_proxy.p) app code =
-  fun view fix ->
+  fun view ->
     [%code
       Dyn.Iterate_proxy.(!)
         (fun v ->
-          [%e staged_g_iter_aux view fix [%code v ] ])
+          [%e staged_g_iter_aux view [%code v ] ])
     ]
 
 let list_data1 : ('a, 'a list) Staged.data1 =
   let explore
-    : type q.
+    : type q x.
       ('a, q) app code
-      -> (('a list, q) V.t -> ('a list, q) app code option -> ('a list, q) app code)
-      -> ('a list, q) app code =
-    fun f_a view_consumer ->
-      view_consumer
-        (fun (a_code : 'a list code) ->
-        { stat = Some (V.DynSum (fun a_code fix ->
-            [%code
-            match [%e a_code ] with
-            | [] ->
-                [%e
-                  view_consumer
-                    (fun _ ->
-                      V.{ stat = Some (K [%code [] ]);
-                          dyn = [%code Tpf.V.K [] ]
-                        }
-                    )
-                    (Some fix)
-                ]
-            | x :: xs ->
-                [%e
-                  let rem =
-                    V.{ stat = Some (V.K [%code List.cons ]);
-                        dyn = [%code Tpf.V.K List.cons ];
-                      }
-                  in
-                  view_consumer
-                    (fun _ ->
-                      V.{ stat =
-                            Some (
-                              V.R (
-                                V.{ stat = Some (A (rem, [%code x ], f_a));
-                                    dyn = [%code Tpf.V.A ([%e rem.dyn ], x, [%e f_a ]) ] }
-                              , xs));
-                          dyn = [%code Tpf.V.R (A (K List.cons, x, [%e f_a ]), xs) ]
-                        })
-                    (Some fix)
-                ]
-            ]));
-          dyn =
-            [%code
-              match [%e a_code ] with
-              | [] -> Tpf.V.K []
-              | x :: xs ->
-                  Tpf.V.R (A (K List.cons, x, [%e f_a ]), xs)
+      -> ('a list, q, x) V.t =
+    fun f_a a_code spine_consumer ->
+      [%code
+        match [%e a_code ] with
+        | [] ->
+            [%e
+              spine_consumer
+                (V.K [%code [] ])
             ]
-        })
-        None
+        | x :: xs ->
+            [%e
+              let rem = V.K [%code List.cons ] in
+              spine_consumer
+                (V.R ( A (rem, [%code x ], f_a) , xs))
+            ]
+      ]
   in
   { explore }
 
+(*
 let staged_option_data1 : ('a, 'a option) Staged.data1 =
   let explore
     : type dynq.
@@ -187,64 +159,32 @@ let staged_option_data1 : ('a, 'a option) Staged.data1 =
       (*-> ('a option, 'a option, statq, dynq) V.spine =*)
     fun f_a view_consumer ->
       view_consumer (fun a_code ->
-        { stat = Some (V.DynSum (fun a_code _ ->
+        V.DynSum (fun a_code _ ->
             [%code
             match [%e a_code ] with
             | None ->
                 [%e
                   view_consumer
-                    (fun _ ->
-                      V.{ stat = Some (K [%code None]);
-                          dyn = [%code Tpf.V.K None ]
-                        }
-                    )
+                    (fun _ -> K [%code None])
                     None
                 ]
             | Some a ->
                 [%e
-                  let remaining_spine =
-                    V.{ stat = Some (K [%code Option.some ]);
-                        dyn = [%code Tpf.V.K Option.some ]
-                      }
-                  in
+                  let remaining_spine = V.K [%code Option.some ] in
                   view_consumer
-                    (fun _ ->
-                      V.{ stat =
-                            Some (A (remaining_spine, [%code a ], f_a));
-                          dyn =
-                            [%code Tpf.V.A ([%e remaining_spine.dyn ], a, [%e f_a ]) ];
-                        }
-                    )
+                    (fun _ -> A (remaining_spine, [%code a ], f_a))
                     None
                 ]
-            ]));
-          dyn = [%code
-            match [%e a_code ] with
-            | None -> Tpf.V.K None
-            | Some a ->
-                  let remaining_spine = Tpf.V.K Option.some in
-                   Tpf.V.A (remaining_spine, a, [%e f_a ])
-            ]
-        }
+            ])
       )
       None
   in
-  (*
-  ('a, 'a option) Staged.data1
-  =
-  { view : 'dynq. ('a, 'dynq, ('a option, 'dynq) V.t) app1 }
-  =
-  { view : 'dynq. ('a, 'dynq) app code -> ('a option, 'dynq) V.t }
-  =
-  { view : 'dynq. ('a, 'dynq) app code
-                         -> (('a option, 'a option, 'dynq) V.spine -> ('a option, 'dynq) app code)
-                         -> 'a option code
-                         -> ('a option, 'dynq) app code }
-  *)
   { explore }
+*)
 
 (* How to use a [data1]? *)
 
+(*
 let iter_option_code_aux : 'a. ('a -> unit) code -> ('a option, Iterate_proxy.p) app code =
   fun f ->
   staged_option_data1.explore
@@ -260,12 +200,17 @@ let iter_option : ('a -> unit) -> 'a option -> unit =
   )
   f
   opt
+*)
 
 let iter_list_aux : 'a. ('a -> unit) code -> ('a list, Iterate_proxy.p) app code =
   fun f ->
+    (*
     list_data1.explore
       [%code Dyn.Iterate_proxy.(!) [%e f ] ]
       staged_g_iter
+    *)
+    staged_g_iter
+      (list_data1.explore [%code Dyn.Iterate_proxy.(!) [%e f ] ])
 
 let iter_list : ('a -> unit) -> 'a list -> unit =
   fun f l ->
@@ -276,6 +221,7 @@ let iter_list : ('a -> unit) -> 'a list -> unit =
       f
       l
 
+(*
 let iter_option_list_aux : ('a -> unit) code -> ('a option list, Iterate_proxy.p) app code =
   fun f ->
     list_data1.explore
@@ -295,14 +241,17 @@ let iter_option_list f l =
     [%code fun f -> Dyn.Iterate_proxy.(!:) [%e iter_option_list_aux [%code f ] ] ]
     f
     l
+*)
 
 let show () =
   Ppx_stage.print
     Format.std_formatter
     (iter_list_aux [%code fun v -> Format.printf "%d\n" v]);
+    (*
   Ppx_stage.print
     Format.std_formatter
     (iter_option_code_aux [%code Format.printf "%d\n" ]);
   Ppx_stage.print
     Format.std_formatter
     (iter_option_list_aux [%code Format.printf "%d\n" ]);
+    *)
