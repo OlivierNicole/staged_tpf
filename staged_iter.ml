@@ -127,58 +127,27 @@ let list : ('a, 'a list) Staged.data1 =
   in
   { explore }
 
-(*
-let staged_option_data1 : ('a, 'a option) Staged.data1 =
+let option : ('a, 'a option) Staged.data1 =
   let explore
-    : type dynq.
-         ('a, dynq) app code
-      -> (('a option, dynq) V.t -> ('a option, dynq) app code option -> ('a option, dynq) app code)
-      -> ('a option, dynq) app code =
-      (*-> ('a option, 'a option, statq, dynq) V.spine =*)
-    fun f_a view_consumer ->
-      view_consumer (fun a_code ->
-        V.DynSum (fun a_code _ ->
-            [%code
-            match [%e a_code ] with
-            | None ->
-                [%e
-                  view_consumer
-                    (fun _ -> K [%code None])
-                    None
-                ]
-            | Some a ->
-                [%e
-                  let remaining_spine = V.K [%code Option.some ] in
-                  view_consumer
-                    (fun _ -> A (remaining_spine, [%code a ], f_a))
-                    None
-                ]
-            ])
-      )
-      None
+    : type q x.
+         ('a, q) app code
+      -> ('a option, q, x) V.t =
+    fun f_a a_code spine_consumer ->
+      [%code
+        match [%e a_code ] with
+        | None ->
+            [%e spine_consumer (V.K [%code None]) ]
+        | Some a ->
+            [%e
+              let remaining_spine = V.K [%code Option.some ] in
+              spine_consumer
+                (V.A (remaining_spine, [%code a ], f_a))
+            ]
+      ]
   in
   { explore }
-*)
 
 (* How to use a [data1]? *)
-
-(*
-let iter_option_code_aux : 'a. ('a -> unit) code -> ('a option, Iterate_proxy.p) app code =
-  fun f ->
-  staged_option_data1.explore
-    ([%code Dyn.Iterate_proxy.(!) [%e f ] ] : ('a, Iterate_proxy.p) app code)
-    (staged_g_iter)
-
-let iter_option : ('a -> unit) -> 'a option -> unit =
-  fun f opt ->
-  Ppx_stage.run (
-    [%code
-      fun f opt -> Dyn.Iterate_proxy.(!:) [%e iter_option_code_aux [%code f ] ] opt
-    ]
-  )
-  f
-  opt
-*)
 
 module Iter : sig
   val data1 : ('a, 'x) Staged.data1 -> ('a code -> unit code) -> 'x code -> unit code
@@ -195,6 +164,19 @@ end = struct
     ]
 end
 
+let iter_option_aux : 'a. ('a -> unit) code -> 'a option code -> unit code =
+  fun f ->
+    Iter.data1 option (fun x -> [%code [%e f ] [%e x ] ])
+
+let iter_option : ('a -> unit) -> 'a option -> unit =
+  fun f opt ->
+    Ppx_stage.run
+      [%code
+        fun f opt -> [%e iter_option_aux [%code f ] [%code opt ] ]
+      ]
+      f
+      opt
+
 let iter_list_aux : 'a. ('a -> unit) code -> 'a list code -> unit code =
   fun f ->
     Iter.data1 list (fun x -> [%code [%e f ] [%e x ] ])
@@ -208,39 +190,25 @@ let iter_list : ('a -> unit) -> 'a list -> unit =
       f
       l
 
-(*
-let iter_option_list_aux : ('a -> unit) code -> ('a option list, Iterate_proxy.p) app code =
+let iter_option_list_aux : ('a -> unit) code -> 'a option list code -> unit code =
   fun f ->
-    list_data1.explore
-      [%code Dyn.Iterate_proxy.(!)
-        (
-          Dyn.Iterate_proxy.(!:)
-            [%e staged_option_data1.explore
-              [%code Dyn.Iterate_proxy.(!) [%e f ] ]
-              staged_g_iter
-            ]
-        )
-      ]
-      staged_g_iter
+    Iter.data1 list (Iter.data1 option (fun x -> [%code [%e f ] [%e x ] ]))
 
 let iter_option_list f l =
   Ppx_stage.run
-    [%code fun f -> Dyn.Iterate_proxy.(!:) [%e iter_option_list_aux [%code f ] ] ]
+    [%code fun f l -> [%e iter_option_list_aux [%code f ] [%code l ] ] ]
     f
     l
-*)
 
 let show () =
   Ppx_stage.print
     Format.std_formatter
-      [%code
-        fun f l -> [%e iter_list_aux [%code f ] [%code l ] ]
-      ];
-    (*
+      [%code fun f l -> [%e iter_list_aux [%code f ] [%code l ] ] ];
   Ppx_stage.print
     Format.std_formatter
-    (iter_option_code_aux [%code Format.printf "%d\n" ]);
+    [%code
+      fun f opt -> [%e iter_option_aux [%code Format.printf "%d\n" ] [%code opt ] ] ];
   Ppx_stage.print
     Format.std_formatter
-    (iter_option_list_aux [%code Format.printf "%d\n" ]);
-    *)
+    [%code
+      fun f l -> [%e iter_option_list_aux [%code Format.printf "%d\n" ] [%code l ] ] ];
