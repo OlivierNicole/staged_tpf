@@ -32,20 +32,11 @@ module Staged = struct
     | K : 'a code -> ('a, 'r, 'q) spine
     | A : ('a -> 'b, 'r, 'q) spine * 'a code * ('a, 'q) app code -> ('b, 'r, 'q) spine
     | R : ('r -> 'b, 'r, 'q) spine * 'r code -> ('b, 'r, 'q) spine
-    (*| DynSum : ('r code -> ('r, 'q) app code -> ('r, 'q) app code) -> ('a, 'r, 'q) spine*)
 
     type ('a, 'q, 'x) t =
          'a code
-      -> ((*('a, 'q) app code option (* Fixpoint query *)*)
-             ('a, 'a, 'q) spine
-          -> 'x code)
+      -> (('a, 'a, 'q) spine -> 'x code)
       -> 'x code
-
-    (*
-    let spine : ('a, 'q) t -> 'a code -> ('a, 'a, 'q) spine =
-      fun view -> view
-      [@@warning "-unused-value-declaration"]
-    *)
   end
 
   type ('a, 'x) data1 =
@@ -67,7 +58,6 @@ end
 
 let staged_g_iter_aux
   : type a y.
-       (*(a, Iterate_proxy.p) app code option (* Fixpoint function *)*)
        (a, Iterate_proxy.p, unit) V.t
     -> a code
     -> unit code =
@@ -90,17 +80,6 @@ let staged_g_iter_aux
                 | None -> failwith "no fixpoint function when I needed it..."
               ] [%e sub_instance ]
             ]
-        (*
-        | DynSum sum_iter ->
-            [%code
-              let rec fix x =
-                Dyn.Iterate_proxy.(!:)
-                  [%e sum_iter [%code x ] [%code Dyn.Iterate_proxy.(!) fix ] ]
-                  x
-              in
-              fix [%e a_code ]
-            ]
-        *)
     in
     [%code
       let rec fix x =
@@ -117,7 +96,6 @@ let staged_g_iter_aux
 let staged_g_iter
   : type a.
         (a, Iterate_proxy.p, unit) V.t
-     (*-> (a, Iterate_proxy.p) app code option (* Fixpoint function *)*)
      -> (a, Iterate_proxy.p) app code =
   fun view ->
     [%code
@@ -126,7 +104,7 @@ let staged_g_iter
           [%e staged_g_iter_aux view [%code v ] ])
     ]
 
-let list_data1 : ('a, 'a list) Staged.data1 =
+let list : ('a, 'a list) Staged.data1 =
   let explore
     : type q x.
       ('a, q) app code
@@ -202,21 +180,30 @@ let iter_option : ('a -> unit) -> 'a option -> unit =
   opt
 *)
 
-let iter_list_aux : 'a. ('a -> unit) code -> ('a list, Iterate_proxy.p) app code =
+module Iter : sig
+  val data1 : ('a, 'x) Staged.data1 -> ('a code -> unit code) -> 'x code -> unit code
+end = struct
+  let data1 data1 f_a v_code =
+    [%code
+      Dyn.Iterate_proxy.(!:)
+        [%e
+          staged_g_iter
+            (data1.explore
+              [%code Dyn.Iterate_proxy.(!) (fun v -> [%e f_a [%code v ] ]) ])
+        ]
+        [%e v_code ]
+    ]
+end
+
+let iter_list_aux : 'a. ('a -> unit) code -> 'a list code -> unit code =
   fun f ->
-    (*
-    list_data1.explore
-      [%code Dyn.Iterate_proxy.(!) [%e f ] ]
-      staged_g_iter
-    *)
-    staged_g_iter
-      (list_data1.explore [%code Dyn.Iterate_proxy.(!) [%e f ] ])
+    Iter.data1 list (fun x -> [%code [%e f ] [%e x ] ])
 
 let iter_list : ('a -> unit) -> 'a list -> unit =
   fun f l ->
     Ppx_stage.run
       [%code
-        fun f l -> Dyn.Iterate_proxy.(!:) [%e iter_list_aux [%code f ] ] l
+        fun f l -> [%e iter_list_aux [%code f ] [%code l ] ]
       ]
       f
       l
@@ -246,7 +233,9 @@ let iter_option_list f l =
 let show () =
   Ppx_stage.print
     Format.std_formatter
-    (iter_list_aux [%code fun v -> Format.printf "%d\n" v]);
+      [%code
+        fun f l -> [%e iter_list_aux [%code f ] [%code l ] ]
+      ];
     (*
   Ppx_stage.print
     Format.std_formatter
