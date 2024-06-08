@@ -15,6 +15,8 @@ tpf, which is [well documented](https://pqwy.github.io/tpf/doc/tpf/index.html).
 
 To do:
 
-- Support recursive types
 - Work around the value restriction which makes it annoying to instantiate
   generic functions
+- Make the interface more usable
+- Write documentation
+- Write derivers for the most common needs (`iter`, `show`, `eq`, `ord`...)
