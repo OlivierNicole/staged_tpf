@@ -20,3 +20,21 @@ To do:
 - Make the interface more usable
 - Write documentation
 - Write derivers for the most common needs (`iter`, `show`, `eq`, `ord`...)
+
+## Installation
+
+From a clone of this repo, run:
+
+```
+opam pin add ppx_staged git+https://github.com/OlivierNicole/ppx_staged.git#undust
+
+opam install . # Build and install, or
+dune build     # Just build
+```
+
+## Usage
+
+This is just my playground, so it's not exactly usable nor documented at the
+moment. However, if you feel like looking at the code, you should read about
+[ppx_stage](https://github.com/stedolan/ppx_stage) and
+[tpf](https://github.com/pqwy/tpf/) first.
