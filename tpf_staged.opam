@@ -12,8 +12,6 @@ bug-reports: "https://github.com/OlivierNicole/staged_tpf/issues"
 depends: [
   "ocaml"
   "dune" {>= "3.15"}
-  "tpf"
-  "ppx_stage"
   "odoc" {with-doc}
 ]
 build: [

@@ -1,12 +1,12 @@
-module M = Tpf_staged.Staged_iter
+module Iter = Tpf_staged.Iter
 
 let () =
   Format.printf "@[<v>";
   Format.printf "------@,";
-  M.show ();
+  Iter.show ();
   Format.printf "@,";
   Format.printf "------@,";
-  M.iter_list (Format.printf "%d@,") [42; (-1); (-898)];
+  Iter.iter_list (Format.printf "%d@,") [42; (-1); (-898)];
   (*M.iter_option_list (Format.printf "%d@,") [Some 42; Some (-1); None; Some (-898)];*)
   Format.printf "------@,";
 

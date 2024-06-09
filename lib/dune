@@ -6,5 +6,4 @@
               ;-dsource
    )
  )
- (libraries tpf)
  (preprocess (pps ppx_stage.ppx)))

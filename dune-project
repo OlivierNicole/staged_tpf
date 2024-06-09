@@ -19,6 +19,6 @@
  (name tpf_staged)
  (synopsis "Metaprogramming-based derivers")
  (description "Metaprogramming-based derivers")
- (depends ocaml dune tpf ppx_stage)
+ (depends ocaml dune)
  (tags
   (metaprogramming ppx deriving ppx_deriving)))
