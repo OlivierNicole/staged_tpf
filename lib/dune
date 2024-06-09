@@ -1,6 +1,10 @@
 (library
  (name tpf_staged)
  (public_name tpf_staged)
- ;(flags (:standard -dsource))
+ (flags
+   (:standard -warn-error -A
+              ;-dsource
+   )
+ )
  (libraries tpf)
  (preprocess (pps ppx_stage.ppx)))

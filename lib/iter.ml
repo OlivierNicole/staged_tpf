@@ -1,75 +1,27 @@
 (* Not staged version, for exercise *)
-
-open Tpf
-module Iterate_proxy = Both_phases.G
-
-let rec g_iter : ('a, Iterate_proxy.p) view -> 'a -> unit =
-  fun view x ->
-    let rec go: 'a. ('a, _, _) V.spine -> unit =
-      function
-      | V.K _ -> ()
-      | V.A (s, a, f_a) -> go s; Iterate_proxy.(!:)f_a a
-      | V.R (s, a) -> go s; g_iter view a
-    in
-    go (spine view x)
-
-include Iterate_proxy.View(struct
-  type 'a r = 'a -> unit
-  let gfun = g_iter
-end)
-
-let _list_iter : ('a -> unit) -> 'a list -> unit =
-  fun iter_value ->
-  data1 Tpf_std.list iter_value
-
-(* Staged version *)
-
+open Core
 open Ppx_stage
 
-module Staged = struct
-  module V = struct
-    type (+_, _, _) spine =
-    | K : 'a code -> ('a, 'r, 'q) spine
-    | A : ('a -> 'b, 'r, 'q) spine * 'a code * ('a, 'q) app code -> ('b, 'r, 'q) spine
-    | R : ('r -> 'b, 'r, 'q) spine * 'r code -> ('b, 'r, 'q) spine
-
-    type ('a, 'q, 'x) t =
-         'a code
-      -> (('a, 'a, 'q) spine -> 'x code)
-      -> 'x code
-  end
-
-  type ('a, 'x) data1 =
-    { explore : 'q 'y.
-           ('a, 'q) app code
-        -> ('x, 'q, 'y) V.t
-    }
-end
-
-open Staged
-
-module Iterate_proxy_staged = Tpf.Generic (struct
-  type 'a q = 'a code -> unit code
-end)
+module G = Iterate_generic
 
 module%code Dyn = struct [@code]
-  module Iterate_proxy = Both_phases.G
+  module G = Iterate_generic
 end
 
 let staged_g_iter_aux
   : type a y.
-       (a, Iterate_proxy.p, unit) V.t
+       (a, G.p, unit) V.t
     -> a code
     -> unit code =
   fun view a_code ->
-    let rec go : type b. (a -> unit) code option -> (b, _, Iterate_proxy.p) V.spine -> unit code =
+    let rec go : type b. (a -> unit) code option -> (b, _, G.p) V.spine -> unit code =
       fun fix spine ->
         match spine with
         | V.K _ -> [%code () ]
         | V.A (s, a_code, f_a) ->
             [%code
               [%e go fix s ];
-              Dyn.Iterate_proxy.(!:) [%e f_a ] [%e a_code ]
+              Dyn.G.(!:) [%e f_a ] [%e a_code ]
             ]
         | R (s, sub_instance) ->
             [%code
@@ -95,17 +47,17 @@ let staged_g_iter_aux
 
 let staged_g_iter
   : type a.
-        (a, Iterate_proxy.p, unit) V.t
-     -> (a, Iterate_proxy.p) app code =
+        (a, G.p, unit) V.t
+     -> (a, G.p) app code =
   fun view ->
     [%code
-      Dyn.Iterate_proxy.(!)
+      Dyn.G.(!)
         (fun v ->
           [%e staged_g_iter_aux view [%code v ] ])
     ]
 
-let list : ('a, 'a list) Staged.data1 =
-  let explore
+let list : ('a, 'a list) data1 =
+  let expose
     : type q x.
       ('a, q) app code
       -> ('a list, q, x) V.t =
@@ -125,10 +77,10 @@ let list : ('a, 'a list) Staged.data1 =
             ]
       ]
   in
-  { explore }
+  { expose }
 
-let option : ('a, 'a option) Staged.data1 =
-  let explore
+let option : ('a, 'a option) data1 =
+  let expose
     : type q x.
          ('a, q) app code
       -> ('a option, q, x) V.t =
@@ -145,20 +97,20 @@ let option : ('a, 'a option) Staged.data1 =
             ]
       ]
   in
-  { explore }
+  { expose }
 
 (* How to use a [data1]? *)
 
 module Iter : sig
-  val data1 : ('a, 'x) Staged.data1 -> ('a code -> unit code) -> 'x code -> unit code
+  val data1 : ('a, 'x) data1 -> ('a code -> unit code) -> 'x code -> unit code
 end = struct
   let data1 data1 f_a v_code =
     [%code
-      Dyn.Iterate_proxy.(!:)
+      Dyn.G.(!:)
         [%e
           staged_g_iter
-            (data1.explore
-              [%code Dyn.Iterate_proxy.(!) (fun v -> [%e f_a [%code v ] ]) ])
+            (data1.expose
+              [%code Dyn.G.(!) (fun v -> [%e f_a [%code v ] ]) ])
         ]
         [%e v_code ]
     ]
