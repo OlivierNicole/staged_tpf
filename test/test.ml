@@ -1,4 +1,4 @@
-module M = Staged_tpf.Staged_iter
+module M = Tpf_staged.Staged_iter
 
 let () =
   Format.printf "@[<v>";

@@ -1,6 +1,6 @@
 (lang dune 3.15)
 
-(name staged_tpf)
+(name tpf_staged)
 
 (generate_opam_files true)
 
@@ -16,7 +16,7 @@
 (documentation https://url/to/documentation)
 
 (package
- (name staged_tpf)
+ (name tpf_staged)
  (synopsis "Metaprogramming-based derivers")
  (description "Metaprogramming-based derivers")
  (depends ocaml dune tpf ppx_stage)
