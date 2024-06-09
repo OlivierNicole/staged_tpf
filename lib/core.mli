@@ -10,14 +10,11 @@ type (+'a, +'f) app
 
 module V : sig
   type (+_, _, _) spine =
-  | K : 'a code -> ('a, 'r, 'q) spine
-  | A : ('a -> 'b, 'r, 'q) spine * 'a code * ('a, 'q) app code -> ('b, 'r, 'q) spine
-  | R : ('r -> 'b, 'r, 'q) spine * 'r code -> ('b, 'r, 'q) spine
+    | K : 'a code -> ('a, 'r, 'q) spine
+    | A : ('a -> 'b, 'r, 'q) spine * 'a code * ('a, 'q) app code -> ('b, 'r, 'q) spine
+    | R : ('r -> 'b, 'r, 'q) spine * 'r code -> ('b, 'r, 'q) spine
 
-  type ('a, 'q, 'x) t =
-       'a code
-    -> (('a, 'a, 'q) spine -> 'x code)
-    -> 'x code
+  type ('a, 'q, 'x) t = 'a code -> (('a, 'a, 'q) spine -> 'x code) -> 'x code
 end
 
 (** {2:appn App} *)
@@ -27,8 +24,7 @@ end
 
 type ('q, 'res) app0 = 'res
 
-type ('a, 'q, 'res) app1 =
-  ('a, 'q) app code -> ('q, 'res) app0
+type ('a, 'q, 'res) app1 = ('a, 'q) app code -> ('q, 'res) app0
 
 (** {1:data Data} *)
 
@@ -41,11 +37,9 @@ type ('a, 'q, 'res) app1 =
     Generic functions should export a [data]-based interface, together with a
     naked function that operates directly on a {!view}. *)
 
-type 'x data0 =
-  { expose   : 'q 'y. ('x, 'q, 'y) V.t }
+type 'x data0 = { expose : 'q 'y. ('x, 'q, 'y) V.t }
 
-type ('a, 'x) data1 =
-  { expose : 'q 'y. ('a, 'q, ('x, 'q, 'y) V.t) app1 }
+type ('a, 'x) data1 = { expose : 'q 'y. ('a, 'q, ('x, 'q, 'y) V.t) app1 }
 
 (** Interface between the outside world and a [spine].
 
@@ -80,8 +74,9 @@ val f2 : ('a, 'b, 'x) data2 -> 'a Q.q -> 'b Q.q -> ...
     {- constructed manually, perhaps by using the functions {{!app0}[app[n]]},
        with their signature spelled out by hand.}}
 *)
-module Generic (Q: sig type 'a q end) : sig
-
+module Generic (Q : sig
+  type 'a q
+end) : sig
   type 'a q = 'a Q.q
   (** Query type for this (group of) function(s). It gives the action to be done
       for each constructor argument. *)
@@ -93,10 +88,10 @@ module Generic (Q: sig type 'a q end) : sig
 
       The only possible operations involving [p] are the two below. *)
 
-  external (!) : 'a q -> ('a, p) app = "%identity"
+  external ( ! ) : 'a q -> ('a, p) app = "%identity"
   (** [!x] injects into the proxy. *)
 
-  external (!:) : ('a, p) app -> 'a q = "%identity"
+  external ( !: ) : ('a, p) app -> 'a q = "%identity"
   (** [!:x] projects from the proxy. *)
 
   (*
@@ -155,5 +150,5 @@ let data1 (d: _ data1) = app1 gfun d.view
              'a q -> 'b q -> 'c q -> 'd q -> 'e q -> 'f q -> 'g q -> 'h q -> 'res
   val app9 : ('cont -> 'res) -> ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'h, 'i, p, 'cont) app9 ->
              'a q -> 'b q -> 'c q -> 'd q -> 'e q -> 'f q -> 'g q -> 'h q -> 'i q -> 'res
-  *)
+   *)
 end

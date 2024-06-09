@@ -2,8 +2,10 @@
  (name tpf_staged)
  (public_name tpf_staged)
  (flags
-   (:standard -warn-error -A
-              ;-dsource
-   )
- )
- (preprocess (pps ppx_stage.ppx)))
+  (:standard
+   -warn-error
+   -A
+   ;-dsource
+   ))
+ (preprocess
+  (pps ppx_stage.ppx)))

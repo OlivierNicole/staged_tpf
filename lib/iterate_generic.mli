@@ -1,1 +1,3 @@
-include module type of Core.Generic (struct type 'a q = 'a -> unit end)
+include module type of Core.Generic (struct
+  type 'a q = 'a -> unit
+end)
