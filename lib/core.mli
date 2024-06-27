@@ -41,6 +41,48 @@ type 'x data0 = { expose : 'q 'y. ('x, 'q, 'y) V.t }
 
 type ('a, 'x) data1 = { expose : 'q 'y. ('a, 'q, ('x, 'q, 'y) V.t) app1 }
 
+(** Packages up {{!data}data}-based entry points to a generic function. *)
+module type Data = sig
+
+  type 'a q
+  (** The {e query} type.
+
+      This is what we need at each inner type that we encounter. *)
+
+  type 'a r
+  (** The overall {e result} type.
+
+      It's often the same as {!q}, but it doesn't have to be. *)
+
+  (** The functions [data[n]] are variants of the same generic function,
+      operating on the corresponding {{!Tpf.data}data} representations: *)
+
+  val data0 : 'x data0 ->
+              'x r
+  val data1 : ('a, 'x) data1 ->
+              'a q -> 'x r
+  (*
+  val data2 : ('a, 'b, 'x) data2 ->
+              'a q -> 'b q -> 'x r
+  val data3 : ('a, 'b, 'c, 'x) data3 ->
+              'a q -> 'b q -> 'c q -> 'x r
+  val data4 : ('a, 'b, 'c, 'd, 'x) data4 ->
+              'a q -> 'b q -> 'c q -> 'd q -> 'x r
+  val data5 : ('a, 'b, 'c, 'd, 'e, 'x) data5 ->
+              'a q -> 'b q -> 'c q -> 'd q -> 'e q -> 'x r
+  val data6 : ('a, 'b, 'c, 'd, 'e, 'f, 'x) data6 ->
+              'a q -> 'b q -> 'c q -> 'd q -> 'e q -> 'f q -> 'x r
+  val data7 : ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'x) data7 ->
+              'a q -> 'b q -> 'c q -> 'd q -> 'e q -> 'f q -> 'g q -> 'x r
+  val data8 : ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'h, 'x) data8 ->
+              'a q -> 'b q -> 'c q -> 'd q -> 'e q -> 'f q -> 'g q -> 'h q ->
+              'x r
+  val data9 : ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'h, 'i, 'x) data9 ->
+              'a q -> 'b q -> 'c q -> 'd q -> 'e q -> 'f q -> 'g q -> 'h q ->
+              'i q -> 'x r
+  *)
+end
+
 (** Interface between the outside world and a [spine].
 
     It contains only three necessary symbols:
@@ -97,6 +139,7 @@ end) : sig
   (*
   module P: P with type p = p and type 'a q := 'a Q.q
   (** Groups {!p} and {!(!)}, above, for easy export. *)
+  *)
 
   (** Functors generating a [data[n]] interface.
 
@@ -108,9 +151,10 @@ end) : sig
       {{!Tpf.data}[data[n]]} interface, for easy export. *)
   module View (F: sig
     type 'a r
-    val gfun: ('a, p) view -> 'a r
+    val gfun: ('a, p, 'x) V.t -> 'a r
   end) : Data with type 'a q := 'a Q.q and type 'a r := 'a F.r
 
+  (*
   (** [Schema] equips a generic producer [gfun] the the
       {{!Tpf.data}[data[n]]} interface, for easy export. *)
   module Schema (F: sig

@@ -9,41 +9,43 @@ end [@code]
 
 let show' :
   type a y. (a, G.p, Format.formatter -> unit) V.t -> a code -> Format.formatter code -> unit code =
-  fun view a_code fmt_code ->
+  fun view a fmt ->
     let rec go :
       type b. (Format.formatter -> a -> unit) code option
-           -> (b, a, G.p) V.spine
            -> Format.formatter code
+           -> (b, a, G.p) V.spine
            -> unit code =
-      fun fix spine fmt_code ->
+      fun fix fmt spine ->
         match spine with
         | V.K _ -> [%code () ]
         | A (s, a_code, f_a) ->
             [%code
-              [%e go fix s fmt_code];
-              Dyn.G.( !: ) [%e f_a ] [%e fmt_code] [%e a_code ]]
+              [%e go fix fmt s];
+              Dyn.G.( !: ) [%e f_a ] [%e fmt] [%e a_code ]]
         | R (s, sub_instance) ->
             [%code
-              [%e go fix s fmt_code];
-              [%e
-                match fix with
-                | Some fix ->
-                    [%code fun fmt_code x_code ->
-                      [%e fix] [%e fmt_code] [%e x_code]]
-                | None -> assert false]
-                [%e sub_instance]]
+              [%e go fix fmt s];
+              [%e Option.get fix] [%e fmt] [%e sub_instance]]
     in
     [%code
-      let rec fix fmt_code x =
+      let rec fix fmt x =
         [%e
-          view
-            [%code x]
+          (view
+            ([%code x] : a code)
             (fun spine ->
               [%code
                 fun fmt ->
-                  [%e go (Some [%code fix]) spine [%code fmt]]
+                  [%e go (Some [%code fix]) [%code fmt] spine]
               ]
             )
+          : (Format.formatter -> unit) code)
          ]
+           [%e fmt]
       in
-      fix [%e fmt_code] [%e a_code]]
+      fix [%e fmt] [%e a]]
+
+let data1 (data1 : ('a, 'x) data1) fmt_sub v =
+  [%code
+    Dyn.G.( !: )
+      [%e
+        show'

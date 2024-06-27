@@ -1,4 +1,3 @@
-(* Not staged version, for exercise *)
 open Core
 open Ppx_stage
 module G = Iterate_generic
@@ -7,7 +6,7 @@ module%code Dyn = struct
   module G = Iterate_generic
 end [@code]
 
-let staged_g_iter_aux : type a y. (a, G.p, unit) V.t -> a code -> unit code =
+let staged_g_iter_aux : type a. (a, G.p, unit) V.t -> a code -> unit code =
  fun view a_code ->
   let rec go : type b. (a -> unit) code option -> (b, _, G.p) V.spine -> unit code =
    fun fix spine ->
@@ -35,17 +34,16 @@ let staged_g_iter : type a. (a, G.p, unit) V.t -> (a, G.p) app code =
 
 (* How to use a [data1]? *)
 
-module Iter : sig
-  val data1 : ('a, 'x) data1 -> ('a code -> unit code) -> 'x code -> unit code
-end = struct
-  let data1 data1 f_a v_code =
-    [%code
-      Dyn.G.( !: )
-        [%e
-          staged_g_iter (data1.expose [%code Dyn.G.( ! ) (fun v -> [%e f_a [%code v]])])]
-        [%e v_code]]
-end
+let data1 data1 f_a v_code =
+  [%code
+    Dyn.G.( !: )
+      [%e
+        staged_g_iter (data1.expose [%code Dyn.G.( ! ) (fun v -> [%e f_a [%code v]])])]
+      [%e v_code]]
 
+(****** Example usage ***********)
+
+(*
 let iter_option_aux : 'a. ('a -> unit) code -> 'a option code -> unit code =
  fun f -> Iter.data1 option (fun x -> [%code [%e f] [%e x]])
 
@@ -75,3 +73,4 @@ let show () =
   Ppx_stage.print
     Format.std_formatter
     [%code fun f l -> [%e iter_option_list_aux [%code Format.printf "%d\n"] [%code l]]]
+*)

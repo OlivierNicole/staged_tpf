@@ -5,7 +5,8 @@
   (:standard
    -warn-error
    -A
-   ;-dsource
+   -dsource
    ))
+ ;(modules_without_implementation failure)
  (preprocess
   (pps ppx_stage.ppx)))
